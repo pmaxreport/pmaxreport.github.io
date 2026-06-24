@@ -1046,32 +1046,37 @@ table td.bold { font-weight: 700; color: var(--brand-900); }
 <div class="section">
   <div class="section-header">
     <div class="section-title"><span class="section-num">2</span> Phân bổ ngân sách</div>
-    <div class="section-desc">Ngân sách thực tế đã được phân bổ vào đâu: theo Mục tiêu, Định dạng, Chủ đề và Tệp khán giả.</div>
+    <div class="section-desc">Ngân sách được phân bổ vào đâu — theo Mục tiêu (có so sánh Kế hoạch vs Thực tế), Định dạng, Chủ đề và Tệp khán giả.</div>
   </div>
 
   <div class="chart-block">
-    <div class="chart-title">Chi tiêu theo Mục tiêu</div>
-    <div class="chart-question">Ngân sách thực tế đã được phân bổ ra sao giữa các mục tiêu?</div>
+    <div class="chart-title">Phân bổ theo Mục tiêu — Kế hoạch vs Thực tế</div>
+    <div class="chart-question">Tỷ trọng ngân sách dự kiến và thực tế đã chi giữa các mục tiêu khác nhau ra sao?</div>
     <div class="chart-wrap pie"><canvas id="chartOverview"></canvas></div>
+    <div style="text-align:center;font-size:11.5px;color:var(--text-muted);margin-top:6px;">Vòng trong (nhạt) = <b>Kế hoạch</b> · Vòng ngoài (đậm) = <b>Thực tế</b> · di chuột để xem số tiền &amp; tỷ trọng</div>
   </div>
 
   <div class="compare-grid">
     <div class="chart-block">
       <div class="chart-title">Chi tiêu theo Định dạng nội dung</div>
       <div class="chart-question">Ảnh đơn / Album / Video — định dạng nào nhận nhiều ngân sách?</div>
-      <div class="chart-wrap"><canvas id="chartFormat"></canvas></div>
+      <div class="chart-wrap pie"><canvas id="chartFormat"></canvas></div>
     </div>
     <div class="chart-block">
       <div class="chart-title">Chi tiêu theo Chủ đề nội dung</div>
-      <div class="chart-question">Tính năng / Green life / Ưu đãi metro / CTKM… — chủ đề nào được ưu tiên?</div>
-      <div class="chart-wrap"><canvas id="chartPillar"></canvas></div>
+      <div class="chart-question">Chủ đề nội dung nào được ưu tiên ngân sách?</div>
+      <div class="chart-wrap pie"><canvas id="chartPillar"></canvas></div>
     </div>
   </div>
 
   <div class="chart-block">
     <div class="chart-title">Chi tiêu theo Tệp khán giả</div>
     <div class="chart-question">Mỗi tệp khán giả nhận bao nhiêu ngân sách?</div>
-    <div class="chart-wrap"><canvas id="chartAudSpend"></canvas></div>
+    <div class="chart-wrap pie"><canvas id="chartAudSpend"></canvas></div>
+  </div>
+
+  <div style="font-size:11.5px;color:var(--text-muted);line-height:1.55;margin:-4px 0 18px;padding:11px 14px;background:var(--bg-section);border-radius:var(--r-md);border:1px solid var(--hairline);">
+    <b>Lưu ý:</b> chỉ <b>Mục tiêu</b> có số Kế hoạch nên mới so sánh được Plan vs Actual. Các biểu đồ Định dạng / Chủ đề / Tệp khán giả chỉ thể hiện <b>phân bổ thực tế</b> — vì KPI ngân sách đặt theo mục tiêu, không có ngân sách kế hoạch riêng cho từng định dạng / chủ đề / tệp khán giả.
   </div>
 
   <div class="insight-box">
@@ -1821,78 +1826,76 @@ function renderBudget() {
   const byObj = sumBy(data, 1);
   const objs = OBJECTIVES;
 
-  // PIE CHART — Spend by Objective (moved from Overview)
+  const PIE_PAL = ['#0D3D2D','#C6FF6E','#1F8857','#FF8A4C','#8AA08F','#C9BFA5','#3E6B57','#D9FF96','#5FA88C','#082B20'];
+  function mkPie(id, labels, values, colors) {
+    const ctx = document.getElementById(id);
+    if (!ctx) return;
+    destroy(id);
+    charts[id] = new Chart(ctx, {
+      type:'pie',
+      data:{ labels, datasets:[{ data: values, backgroundColor: colors, borderColor:'#fff', borderWidth:3 }] },
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        plugins:{
+          legend:{ position:'bottom', labels:{ font:{size:12}, padding:12, boxWidth:13 } },
+          tooltip:{ callbacks:{ label: c => {
+            const t = values.reduce((a,b)=>a+b,0);
+            const pct = t ? (c.parsed/t*100).toFixed(1).replace('.', ',') : '0';
+            return c.label + ': ' + fmtVND(c.parsed) + ' (' + pct + '%)';
+          }}}
+        }
+      }
+    });
+  }
+
+  // ---- PLAN vs ACTUAL by objective — gộp 1 pie 2 vòng (trong = Kế hoạch, ngoài = Thực tế) ----
+  const hexA = (hex,a)=>{ const h=hex.replace('#',''); const f=h.length===3?h.split('').map(x=>x+x).join(''):h; const n=parseInt(f,16); return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`; };
+  const objColor = {REACH:C.green, ENGAGEMENT:C.greenLight, VIEW:C.gold, THRUPLAY:C.gold, TRAFFIC:'#FF8A4C'};
+  const objLabels = objs.map(o => objLabel(o));
+  const objCols = objs.map(o => objColor[o] || C.green);
+  const planVals = objs.map(o => (KPI[o] && KPI[o].budget) ? KPI[o].budget : 0);
+  const actualVals = objs.map(o => (byObj[o] || {cost:0}).cost || 0);
   destroy('chartOverview');
-  const objColor = {REACH:C.green, ENGAGEMENT:C.blue, VIEW:C.gold, THRUPLAY:C.gold, TRAFFIC:'#34D399'};
-  const pieLabels = objs.map(o => objLabel(o));
-  const pieVals = objs.map(o => (byObj[o] || {cost:0}).cost || 0);
-  const pieColors = objs.map(o => objColor[o] || C.green);
   charts.chartOverview = new Chart(document.getElementById('chartOverview'), {
     type:'pie',
-    data: { labels: pieLabels, datasets:[{ data: pieVals, backgroundColor: pieColors, borderColor:'#fff', borderWidth:3 }] },
+    data:{
+      labels: objLabels,
+      datasets:[
+        { label:'Kế hoạch', data: planVals, backgroundColor: objCols.map(c=>hexA(c,0.40)), borderColor:'#fff', borderWidth:2 },
+        { label:'Thực tế', data: actualVals, backgroundColor: objCols, borderColor:'#fff', borderWidth:2 }
+      ]
+    },
     options:{
       responsive:true, maintainAspectRatio:false,
       plugins:{
-        legend:{position:'bottom', labels:{font:{size:13}, padding:14, boxWidth:14}},
-        tooltip:{callbacks:{
-          label: c => {
-            const t = pieVals.reduce((a,b)=>a+b,0);
-            const pct = t ? (c.parsed/t*100).toFixed(1) : 0;
-            return objLabel(c.label) + ': ' + fmtVND(c.parsed) + ' (' + pct.replace('.', ',') + '%)';
-          }
-        }}
+        legend:{ position:'bottom', labels:{ font:{size:12}, padding:12, boxWidth:13,
+          generateLabels: (chart)=> chart.data.labels.map((lb,i)=>({ text: lb, fillStyle: objCols[i], strokeStyle:'#fff', lineWidth:1, index:i })) } },
+        tooltip:{ callbacks:{ label: c => {
+          const ds = c.dataset.data; const t = ds.reduce((a,b)=>a+b,0);
+          const pct = t ? (c.parsed/t*100).toFixed(1).replace('.', ',') : '0';
+          return `${c.label} · ${c.dataset.label}: ${fmtVND(c.parsed)} (${pct}%)`;
+        }}}
       }
     }
   });
 
-  // Bar chart — Spend by Format (actual visual format per post: Single photo / Album Photo / Video)
+  // ---- Spend by Content Format (pie) ----
   const formatSpend = {};
-  data.forEach(r => {
-    const f = POST_FORMAT[r[2]] || 'Khác';
-    formatSpend[f] = (formatSpend[f]||0) + r[7];
-  });
-  const fmtKeys = Object.keys(formatSpend).sort((a,b)=>formatSpend[b]-formatSpend[a]).slice(0,8);
-  const fmtVals = fmtKeys.map(k => formatSpend[k]);
-  destroy('chartFormat');
-  charts.chartFormat = new Chart(document.getElementById('chartFormat'), {
-    type:'bar',
-    data:{ labels: fmtKeys, datasets:[{ data: fmtVals, backgroundColor: '#1F8857', borderRadius:6, maxBarThickness:48 }] },
-    options:{ responsive:true, maintainAspectRatio:false, indexAxis:'y',
-      plugins:{legend:{display:false}, tooltip:{callbacks:{label: c => fmtVND(c.parsed.x)}}},
-      scales:{ x:{ticks:{callback:v=>fmt(v)+'đ'}}, y:{ticks:{font:{size:11}}} }
-    }
-  });
+  data.forEach(r => { const f = POST_FORMAT[r[2]] || 'Khác'; formatSpend[f] = (formatSpend[f]||0) + r[7]; });
+  const fmtKeys = Object.keys(formatSpend).sort((a,b)=>formatSpend[b]-formatSpend[a]);
+  mkPie('chartFormat', fmtKeys, fmtKeys.map(k=>formatSpend[k]), fmtKeys.map((_,i)=>PIE_PAL[i%PIE_PAL.length]));
 
-  // Bar chart — Spend by Pillar
+  // ---- Spend by Content Pillar (pie) ----
   const pillarSpend = {};
-  data.forEach(r => {
-    const pillar = POST_PILLAR[r[2]] || 'Khác';
-    pillarSpend[pillar] = (pillarSpend[pillar]||0) + r[7];
-  });
+  data.forEach(r => { const p = POST_PILLAR[r[2]] || 'Khác'; pillarSpend[p] = (pillarSpend[p]||0) + r[7]; });
   const pillarKeys = Object.keys(pillarSpend).sort((a,b)=>pillarSpend[b]-pillarSpend[a]);
-  destroy('chartPillar');
-  charts.chartPillar = new Chart(document.getElementById('chartPillar'), {
-    type:'bar',
-    data:{ labels: pillarKeys, datasets:[{ data: pillarKeys.map(k=>pillarSpend[k]), backgroundColor: C.green, borderRadius:6, maxBarThickness:48 }] },
-    options:{ responsive:true, maintainAspectRatio:false, indexAxis:'y',
-      plugins:{legend:{display:false}, tooltip:{callbacks:{label: c => fmtVND(c.parsed.x)}}},
-      scales:{ x:{ticks:{callback:v=>fmt(v)+'đ'}}, y:{ticks:{font:{size:11}}} }
-    }
-  });
+  mkPie('chartPillar', pillarKeys, pillarKeys.map(k=>pillarSpend[k]), pillarKeys.map((_,i)=>PIE_PAL[i%PIE_PAL.length]));
 
-  // Bar chart — Spend by Audience
+  // ---- Spend by Audience (pie) ----
   const audSpend = {};
   data.forEach(r => { audSpend[r[3]] = (audSpend[r[3]]||0) + r[7]; });
   const audKeys = Object.keys(audSpend).filter(k=>k).sort((a,b)=>audSpend[b]-audSpend[a]);
-  destroy('chartAudSpend');
-  charts.chartAudSpend = new Chart(document.getElementById('chartAudSpend'), {
-    type:'bar',
-    data:{ labels: audKeys.map(a=>audLabel(a)), datasets:[{ data: audKeys.map(a=>audSpend[a]), backgroundColor: C.gold, borderRadius:6, maxBarThickness:48 }] },
-    options:{ responsive:true, maintainAspectRatio:false, indexAxis:'y',
-      plugins:{legend:{display:false}, tooltip:{callbacks:{label: c => fmtVND(c.parsed.x)}}},
-      scales:{ x:{ticks:{callback:v=>fmt(v)+'đ'}}, y:{ticks:{font:{size:11}}} }
-    }
-  });
+  mkPie('chartAudSpend', audKeys.map(a=>audLabel(a)), audKeys.map(a=>audSpend[a]), audKeys.map((_,i)=>PIE_PAL[i%PIE_PAL.length]));
 
   // Insights — ngân sách allocation analysis
   const sortedObj = objs.map(o => ({o, label: objLabel(o), spend: (byObj[o]||{cost:0}).cost||0, planBudget: KPI[o].budget})).sort((a,b)=>b.spend-a.spend);
